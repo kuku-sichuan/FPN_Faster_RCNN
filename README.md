@@ -50,15 +50,15 @@ In the list, each file has a *Debug* signal to decide whether the corresponding 
 
 **Display images recorded in tensorboard:**  
 ground true objects: 
-![avatar](./images/gt.jpg)
+![avatar](images/gt.jpg)
 proposals for training head: 
-![avatar](./images/train_proposal.jpg)
+![avatar](images/train_proposal.jpg)
 the first 50 proposal:
-![avatar](./images/proposal.jpg)
+![avatar](images/proposal.jpg)
 the finial detection:
-![avatar](./images/detection.jpg)
+![avatar](images/detection.jpg)
 #### Other tools
 For convenience, our data analysis and the performance of the network are presented *ipynb* format. 
 * inspect_data.ipynb:Simple analysis and understanding of datasets and data.
 * Predict.ipynb: predict the single image.
-* evaluate_network.ipynb: compute mAP and the recall of rpn and error analysis.*Error analysis* including three types: classifier error, missing objects, false positive. And we also show some error objects to analysis.![avatar](./images/error_objects.png)
+* evaluate_network.ipynb: compute mAP and the recall of rpn and error analysis.*Error analysis* including three types: classifier error, missing objects, false positive. And we also show some error objects to analysis.![avatar](images/error_objects.png)

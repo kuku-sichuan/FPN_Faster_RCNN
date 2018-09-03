@@ -19,7 +19,7 @@ for computational efficiency and coding convenient,we first convert the data int
 We only support the transformation of **COCO** style data. If your data is the style of **VOC**, you must convert the VOC style to COCO style. **One more thing you must notice is that you need to manually add the dictionary of category name and label in your data to /libs/label_dict.py**. Then:
 
 ```shell
-cd $Feature_Pyramid_Network/data/
+cd $FPN_Faster_RCNN/data/
 python convert_data_to_tfrecord.py --DATA_dir=/cocodataset/ --annotation_dir=annotations/train.json --image_dir=images/train --save_dir=/tfrecord/ --dataset_name=coco --dataset_class=train
 ```
 **Generate**:   

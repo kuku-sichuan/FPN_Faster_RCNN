@@ -96,6 +96,8 @@ class FastRCNN(object):
                     matchs = tf.cast(tf.argmax(ious, axis=1), tf.int32)  # [N, ]
                     max_iou_each_row = tf.reduce_max(ious, axis=1)
                     positives = tf.cast(tf.greater_equal(max_iou_each_row, config.FAST_RCNN_IOU_POSITIVE_THRESHOLD), tf.int32)
+                    ignores = tf.cast(tf.less(max_iou_each_row, config.FAST_RCNN_IOU_LOW_NEG_THRESHOLD), tf.int32)* -1
+                    positives = positives + ignores
 
                     reference_boxes_mattached_gtboxes = tf.gather(gtboxes, matchs)  # [N, 4]
                     gt_class_ids = tf.gather(gt_class_ids, matchs)  # [N, ]
@@ -105,7 +107,7 @@ class FastRCNN(object):
 
                 with tf.variable_scope('fast_rcnn_minibatch'):
                     # choose the positive indices
-                    positive_indices = tf.reshape(tf.where(tf.not_equal(object_mask, 0.)), [-1])
+                    positive_indices = tf.reshape(tf.where(tf.equal(object_mask, 1.)), [-1])
                     num_of_positives = tf.minimum(tf.shape(positive_indices)[0],
                                                   tf.cast(config.FAST_RCNN_MINIBATCH_SIZE*config.FAST_RCNN_POSITIVE_RATE,
                                                           tf.int32))

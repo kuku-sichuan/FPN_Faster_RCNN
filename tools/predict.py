@@ -20,9 +20,9 @@ def model_fn(features,
     net_config = params["net_config"]
     IS_TRAINING = False
 
-    image_batch = features["image"]
     image_window = features["image_window"]
-    origin_image_batch = image_batch + tf.convert_to_tensor(net_config.PIXEL_MEANS)
+    origin_image_batch = features["image"]
+    image_batch = origin_image_batch - tf.convert_to_tensor(net_config.PIXEL_MEANS, dtype=tf.float32)
     # there is is_training means that bn is training, so it is important!
     _, share_net = get_network_byname(inputs=image_batch,
                                       config=net_config,

@@ -6,9 +6,9 @@ from tensorflow.python.training.basic_session_run_hooks import SecondOrStepTimer
 
 class MetadataHook(SessionRunHook):
     def __init__(self,
-                save_steps=None,
-                save_secs=None,
-                output_dir=""):
+                 save_steps=None,
+                 save_secs=None,
+                 output_dir=""):
         self._output_tag = "step-{}"
         self._output_dir = output_dir
         self._save_steps = save_steps

@@ -41,21 +41,27 @@ class RPN(object):
         rpn_encode_boxes_list = []
         rpn_scores_list = []
 
-        with tf.variable_scope('rpn_net'):
+        with tf.variable_scope('rpn_net', reuse=tf.AUTO_REUSE):
             for level in self.config.LEVEL:
                 scope_list = ['conv2d_3x3', 'rpn_classifier', 'rpn_regressor']
 
                 rpn_conv2d_3x3 = layers.Conv2D(filters=512,
                                                kernel_size=(3, 3),
-                                               stride=self.config.RPN_ANCHOR_STRIDE,
+                                               strides=self.config.RPN_ANCHOR_STRIDE,
+                                               kernel_initializer="glorot_uniform",
+                                               padding="same",
                                                name=scope_list[0])(self.feature_pyramid[level])
                 rpn_box_scores = layers.Conv2D(filters=2 * self.num_of_anchors_per_location,
                                                kernel_size=(1, 1),
-                                               stride=1,
-                                               scope=scope_list[1])(rpn_conv2d_3x3)
+                                               strides=1,
+                                               kernel_initializer="glorot_uniform",
+                                               padding="same",
+                                               name=scope_list[1])(rpn_conv2d_3x3)
                 rpn_encode_boxes = layers.Conv2D(filters=4 * self.num_of_anchors_per_location,
                                                  kernel_size=(1, 1),
-                                                 stride=1,
+                                                 strides=1,
+                                                 kernel_initializer="glorot_uniform",
+                                                 padding="same",
                                                  name=scope_list[2])(rpn_conv2d_3x3)
 
                 rpn_box_scores = layers.Reshape((-1, 2))(rpn_box_scores)
@@ -139,10 +145,10 @@ class RPN(object):
                                                                   reference_boxes=anchors,
                                                                   dev_factors=config.RPN_BBOX_STD_DEV)
 
-                valid_indices = nms_index = tf.image.non_max_suppression(boxes=rpn_decode_boxes,
-                                                                         scores=rpn_object_score,
-                                                                         max_output_size=rpn_proposals_num,
-                                                                         iou_threshold=config.RPN_NMS_IOU_THRESHOLD)
+                valid_indices = tf.image.non_max_suppression(boxes=rpn_decode_boxes,
+                                                             scores=rpn_object_score,
+                                                             max_output_size=rpn_proposals_num,
+                                                             iou_threshold=config.RPN_NMS_IOU_THRESHOLD)
                 rpn_decode_boxes = tf.gather(rpn_decode_boxes, valid_indices)
                 rpn_object_score = tf.gather(rpn_object_score, valid_indices)
                 # clip proposals to img boundaries(replace the out boundary with image boundary)

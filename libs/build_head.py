@@ -71,10 +71,10 @@ class FPNHead(object):
         iou < 0.5 is background
         this function need batch_slice
         :return:
-        minibatch_reference_proboxes: (batch_szie, config.FAST_RCNN_MINIBATCH_SIZE, 4)[y1, x1, y2, x2]
-        minibatch_encode_gtboxes:(batch_szie, config.FAST_RCNN_MINIBATCH_SIZE, 4)[dy, dx, log(dh), log(dw)]
-        object_mask:(batch_szie, config.FAST_RCNN_MINIBATCH_SIZE) 1 indicate is object, 0 indicate is not objects
-        label_one_hot: (batch_szie, config.FAST_RCNN_MINIBATCH_SIZE, num_class)
+        minibatch_reference_proboxes: (batch_szie, config.HEAD_MINIBATCH_SIZE, 4)[y1, x1, y2, x2]
+        minibatch_encode_gtboxes:(batch_szie, config.HEAD_MINIBATCH_SIZE, 4)[dy, dx, log(dh), log(dw)]
+        object_mask:(batch_szie, config.HEAD_MINIBATCH_SIZE) 1 indicate is object, 0 indicate is not objects
+        label_one_hot: (batch_szie, config.HEAD_MINIBATCH_SIZE, num_class)
         """
 
         with tf.name_scope('build_head_train_sample'):
@@ -94,9 +94,7 @@ class FPNHead(object):
                     ious = boxes_utils.iou_calculate(rpn_proposals_boxes, gtboxes)  # [N, M]
                     matchs = tf.cast(tf.argmax(ious, axis=1), tf.int32)  # [N, ]
                     max_iou_each_row = tf.reduce_max(ious, axis=1)
-                    positives = tf.cast(tf.greater_equal(max_iou_each_row, config.FAST_RCNN_IOU_POSITIVE_THRESHOLD), tf.int32)
-                    ignores = tf.cast(tf.less(max_iou_each_row, config.FAST_RCNN_IOU_LOW_NEG_THRESHOLD), tf.int32)* -1
-                    positives = positives + ignores
+                    positives = tf.cast(tf.greater_equal(max_iou_each_row, config.HEAD_IOU_POSITIVE_THRESHOLD), tf.int32)
 
                     reference_boxes_mattached_gtboxes = tf.gather(gtboxes, matchs)  # [N, 4]
                     gt_class_ids = tf.gather(gt_class_ids, matchs)  # [N, ]
@@ -108,14 +106,14 @@ class FPNHead(object):
                     # choose the positive indices
                     positive_indices = tf.reshape(tf.where(tf.equal(object_mask, 1.)), [-1])
                     num_of_positives = tf.minimum(tf.shape(positive_indices)[0],
-                                                  tf.cast(config.FAST_RCNN_MINIBATCH_SIZE*config.FAST_RCNN_POSITIVE_RATE,
+                                                  tf.cast(config.HEAD_MINIBATCH_SIZE*config.HEAD_POSITIVE_RATE,
                                                           tf.int32))
                     positive_indices = tf.random_shuffle(positive_indices)
                     positive_indices = tf.slice(positive_indices, begin=[0], size=[num_of_positives])
                     # choose the negative indices,
                     # Strictly propose the proportion of positive and negative is 1:3
                     negative_indices = tf.reshape(tf.where(tf.equal(object_mask, 0.)), [-1])
-                    num_of_negatives = tf.cast(int(1. / config.FAST_RCNN_POSITIVE_RATE) * num_of_positives, tf.int32)\
+                    num_of_negatives = tf.cast(int(1. / config.HEAD_POSITIVE_RATE) * num_of_positives, tf.int32)\
                                        - num_of_positives
 
                     num_of_negatives = tf.minimum(tf.shape(negative_indices)[0], num_of_negatives)
@@ -136,7 +134,7 @@ class FPNHead(object):
                     gt_class_ids = tf.gather(gt_class_ids, minibatch_indices)
 
                     # padding if necessary
-                    gap = tf.cast(config.FAST_RCNN_MINIBATCH_SIZE - (num_of_positives + num_of_negatives), dtype=tf.int32)
+                    gap = tf.cast(config.HEAD_MINIBATCH_SIZE - (num_of_positives + num_of_negatives), dtype=tf.int32)
                     bbox_padding = tf.zeros((gap, 4))
                     minibatch_reference_proboxes = tf.concat([minibatch_reference_proboxes, bbox_padding], axis=0)
                     minibatch_encode_gtboxes = tf.concat([minibatch_encode_gtboxes, bbox_padding], axis=0)
@@ -152,12 +150,14 @@ class FPNHead(object):
         if self.config.DEBUG:
             gt_vision = draw_boxes_with_categories(self.origin_image[0],
                                                    self.gtboxes_and_label[0, :, :4],
-                                                   self.gtboxes_and_label[0, :, 4])
+                                                   self.gtboxes_and_label[0, :, 4],
+                                                   self.config.LABEL_TO_NAME)
             tf.summary.image("gt_vision", gt_vision)
 
             draw_bbox_train = draw_boxes_with_categories(self.origin_image[0],
                                                          minibatch_reference_proboxes[0],
-                                                         gt_class_ids[0])
+                                                         gt_class_ids[0],
+                                                         self.config.LABEL_TO_NAME)
             tf.summary.image("train_proposal", draw_bbox_train)
 
         return minibatch_reference_proboxes, minibatch_encode_gtboxes, object_mask, gt_class_ids
@@ -254,20 +254,28 @@ class FPNHead(object):
 
                 net = layers.Conv2D(filters=1024,
                                     kernel_size=(self.config.ROI_SIZE, config.ROI_SIZE),
+                                    kernel_initializer="glorot_uniform",
+                                    padding="valid",
                                     name="fc1")(features)
-                net = tf.layers.batch_normalization (net, training=is_training)
-                net = layers.Activation('relu6')(net)
+                net = tf.layers.batch_normalization(net,momentum=0.99,
+                      epsilon=0.00001,training=is_training,fused=True)
+                net = layers.Activation("relu")(net)
                 net = layers.Conv2D(filters=1024,
                                     kernel_size=(1, 1),
-                                    name="fc2")(inputs=net)
-                net = tf.layers.batch_normalization (net, training=is_training)
-                net = layers.Activation('relu6')(net)
+                                    kernel_initializer="glorot_uniform",
+                                    padding="valid",
+                                    name="fc2")(net)
+                net = tf.layers.batch_normalization(net,momentum=0.99,
+                      epsilon=0.00001,training=is_training,fused=True)
+                net = layers.Activation("relu")(net)
 
                 net = tf.squeeze(net, axis=[1, 2])
                 head_scores = layers.Dense(config.NUM_CLASS,
+                                           kernel_initializer="glorot_uniform",
                                            name='head_classifier')(net)
-                head_encode_boxes = layers.Dense(net, config.NUM_CLASS * 4,
-                                                 name='head_regressor')
+                head_encode_boxes = layers.Dense(config.NUM_CLASS * 4,
+                                                 kernel_initializer="glorot_uniform",
+                                                 name='head_regressor')(net)
                 head_encode_boxes = layers.Reshape((config.NUM_CLASS, 4))(head_encode_boxes)
 
                 return head_encode_boxes, head_scores
@@ -282,7 +290,7 @@ class FPNHead(object):
     def head_loss(self):
 
         minibatch_reference_proboxes, minibatch_encode_gtboxes,\
-        object_mask, gt_class_ids = self.build_head_train_sample
+        object_mask, gt_class_ids = self.build_head_train_sample()
 
         pooled_feature = self.get_rois_feature(minibatch_reference_proboxes)
 
@@ -392,7 +400,7 @@ class FPNHead(object):
                         tf.gather(pre_nms_rois, ixs),
                         tf.gather(pre_nms_scores, ixs),
                         max_output_size=config.DETECTION_MAX_INSTANCES,
-                        iou_threshold=config.FAST_RCNN_NMS_IOU_THRESHOLD)
+                        iou_threshold=config.HEAD_NMS_IOU_THRESHOLD)
                     # Map indicies
                     class_keep = tf.gather(keep, tf.gather(ixs, class_keep))
                     # Pad with -1 so returned tensors have the same shape

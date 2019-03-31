@@ -4,7 +4,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
 import tensorflow as tf
 
 
@@ -34,19 +33,23 @@ def l1_smooth_losses(predict_boxes, gtboxes, object_weights):
     return smooth_box_loss
 
 
-def weighted_softmax_cross_entropy_loss(predictions, labels, weights):
-    '''
+def my_sigmoid_cross_entropy(labels, predictions, num_class, smooth=False):
+    """
+    :param labels:(N,)
+    :param predictions:(N, num_classes)
+    
+    """
+    labels = tf.one_hot(labels, num_class)
+    labels = tf.cond(smooth, true_fn=lambda:labels *(1-0.2) + 0.2/num_class,
+                             false_fn=lambda: labels)
+    return tf.losses.sigmoid_cross_entropy(labels, predictions)
 
-    :param predictions:
-    :param labels:
-    :param weights: [N, ] 1 -> should be sampled , 0-> not should be sampled
-    :return:
-    # '''
-    per_row_cross_ent = tf.nn.softmax_cross_entropy_with_logits(logits=predictions,
-                                                                labels=labels)
 
-    weighted_cross_ent = tf.reduce_sum(per_row_cross_ent * weights)
-    return weighted_cross_ent / tf.reduce_sum(weights)
+def my_softmax_cross_entropy(labels, predictions, num_class, smooth=False):
+    labels = tf.one_hot(labels, num_class)
+    labels = tf.cond(smooth, true_fn=lambda:labels *(1-0.2) + 0.2/num_class,
+                             false_fn=lambda: labels)
+    return tf.losses.softmax_cross_entropy(labels, predictions)
 
 
 def test_smoothl1():

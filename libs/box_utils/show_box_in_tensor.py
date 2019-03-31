@@ -96,8 +96,7 @@ def draw_boxes_with_scores(img_batch, boxes, scores):
             color = (np.random.randint(255), np.random.randint(255), np.random.randint(255))
             cv2.rectangle(img,
                           pt1=(xmin, ymin),
-                          pt2=(xmax, ymax),
-                          color=color,
+                          pt2=(xmax, ymax), color=color,
                           thickness=2)
 
             cv2.rectangle(img,

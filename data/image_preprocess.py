@@ -7,10 +7,9 @@ from __future__ import division
 import tensorflow as tf
 
 
-def image_resize_pad_sub_mean(img_tensor,
-                              gtboxes_and_label,
-                              target_side,
-                              pixel_means):
+def image_resize_pad(img_tensor,
+                     gtboxes_and_label,
+                     target_side):
     """
     :param img_tensor:tensor, shape [h, w, c]
     :param gtboxes_and_label:tensor, [-1, 5]
@@ -35,17 +34,16 @@ def image_resize_pad_sub_mean(img_tensor,
     # the length after resizing
     new_xlen = xmax - xmin
     new_ylen = ymax - ymin
-    bool_mask = tf.logical_and(tf.greater(new_xlen, 5), tf.greater(new_ylen, 5))
+    bool_mask = tf.logical_and(tf.greater(new_xlen, 2), tf.greater(new_ylen, 2))
 
     # padding the image
     img_tensor = tf.squeeze(img_tensor, axis=0)
-    img_tensor = img_tensor - tf.convert_to_tensor(pixel_means)
     pad_list = [compute_padding(target_side, new_h), compute_padding(target_side, new_w), [0, 0]]
     img_tensor = tf.pad(img_tensor, pad_list)
 
     # compute image windows(y1, x1, y2, x2)
     image_windows = tf.convert_to_tensor([pad_list[0][0], pad_list[1][0],
-                                          pad_list[0][0]+new_h-1, pad_list[1][0]+new_w-1])
+                                          pad_list[0][0]+new_h-1, pad_list[1][0]+new_w-1],dtype=tf.int32)
     # box along with the padding image
     xmin, xmax = xmin + pad_list[1][0], xmax + pad_list[1][0]
     ymin, ymax = ymin + pad_list[0][0], ymax + pad_list[0][0]

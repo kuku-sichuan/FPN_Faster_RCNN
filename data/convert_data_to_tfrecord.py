@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import division, print_function, absolute_import
 import sys
+sys.path.append('../')
 import os
 import math
 import json
@@ -8,10 +9,8 @@ import numpy as np
 import tensorflow as tf
 import skimage.io
 from config import TCTConfig
-sys.path.append('../')
+
 tf.app.flags.DEFINE_string('DATA_dir', None, 'the root of data dir')
-tf.app.flags.DEFINE_string('annotation_dir', 'annotations', 'relative path of annotations')
-tf.app.flags.DEFINE_string('image_dir', 'images', 'relative path of　image')
 tf.app.flags.DEFINE_string('save_dir',  '/home/data/tfrecords/',
                            'the absolutize path to save the converted tfrecord files')
 tf.app.flags.DEFINE_string('dataset_name', 'tct', 'the name of dataset')
@@ -81,8 +80,8 @@ def read_json_gtbox_and_label(image_item, data):
 
 def convert_json_to_tfrecord():
 
-    json_path = os.path.join(FLAGS.DATA_dir, FLAGS.annotation_dir)
-    Image_path = os.path.join(FLAGS.DATA_dir, FLAGS.image_dir)
+    json_path = os.path.join(FLAGS.DATA_dir, "annotations", FLAGS.dataset_class+'.json')
+    Image_path = os.path.join(FLAGS.DATA_dir, "images", FLAGS.dataset_class)
     save_path = os.path.join(FLAGS.save_dir,  FLAGS.dataset_name, FLAGS.dataset_class+ '.tfrecord')
     mkdir(os.path.join(FLAGS.save_dir, FLAGS.dataset_name))
 

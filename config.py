@@ -7,7 +7,7 @@ class Config(object):
     ##############################
     # Data And Dataset
     ##############################
-    CHECKPOINT_DIR = "/root/commonfile/model_zoo/20180601_resnet_v2_imagenet_checkpoint"
+    CHECKPOINT_DIR = "/root/commonfile/resnet_imagenet_v2_fp32_20181001"
     NUM_CLASS = 0
     NUM_ITEM_DATASET = 0
     DATASET_NAME = None
@@ -15,6 +15,7 @@ class Config(object):
     MODLE_DIR = None
     TARGET_SIDE = None
     NAME_TO_LABEL = None
+    COMPUTE_TIME = False
     IMAGE_MAX_INSTANCES = 100
     PIXEL_MEANS = np.array([115.2, 118.8, 123.0])
 
@@ -33,8 +34,10 @@ class Config(object):
     ###################################
     # Training Config
     ###################################
-    EPOCH_BOUNDARY = [35, 50]
-    EPOCH = 60
+    GPU_GROUPS = ["/gpu:0"]
+    CLIP_GRADIENT_NORM = 6.0
+    EPOCH_BOUNDARY = [20, 35]
+    EPOCH = 40
     WEIGHT_DECAY = 0.0001
     EPSILON = 1e-5
     MOMENTUM = 0.9
@@ -70,7 +73,7 @@ class Config(object):
     HEAD_IOU_POSITIVE_THRESHOLD = 0.5
     HEAD_IOU_LOW_NEG_THRESHOLD = 0.1
     HEAD_MINIBATCH_SIZE = 200
-    HEAD_POSITIVE_RATE = 0.25
+    HEAD_POSITIVE_RATE = 0.33
     DETECTION_MAX_INSTANCES = 200
 
     def __init__(self):
@@ -97,13 +100,15 @@ class TCTConfig(Config):
     NUM_CLASS = 11 + 1
     NUM_ITEM_DATASET = 5714
     # The exact location of data be located by fllowing four variables
-    DATA_DIR = "/root/userfolder/kuku/tfrecord"
+    DATA_DIR = "/root/commonfile/tfdata"
     DATASET_NAME = 'tct'
-    TRAIN_DATASET_NAME = "trainval.tfrecord"
+    TRAIN_DATASET_NAME = "train.tfrecord"
     EVAL_DATASET_NAME = "test.tfrecord"
 
     # the summary and model will be saved in this location
+    DEBUG =False
     MODLE_DIR = "./logs"
+    BACKBONE_NET = "resnet_model"
     NET_NAME = "ResNet_FPN"
     # resize and padding the image shape to (1024, 1024)
     TARGET_SIDE = 1024

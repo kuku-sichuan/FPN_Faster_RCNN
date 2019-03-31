@@ -5,7 +5,7 @@ This tensorflow implementation code is based on [Feature Pyramid Networks for Ob
 1. Streamlining structure and removing redundant parts
 2. Making the code more clear
 3. Replacing some API by new one
-4. Adding the compute time graph by set the `COMPUTE_TIME` with True
+4. Adding the compute time graph by set the `COMPUTE_TIME` in config with True
 
 ![compute_time](images/compute_time.png)
 

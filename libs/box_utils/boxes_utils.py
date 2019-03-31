@@ -4,9 +4,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 from libs.box_utils import encode_and_decode
-from help_utils.help_utils import print_tensors
 
 
 def clip_boxes_to_img_boundaries(decode_boxes, windows):
@@ -168,18 +168,6 @@ def iou_calculate(boxes_1, boxes_2):
         return iou
 
 
-def non_maximal_suppression(boxes, scores, iou_threshold, max_output_size, name='non_maximal_suppression'):
-    with tf.variable_scope(name):
-        nms_index = tf.image.non_max_suppression(
-            boxes=boxes,
-            scores=scores,
-            max_output_size=max_output_size,
-            iou_threshold=iou_threshold,
-            name=name
-        )
-        return nms_index
-
-
 def build_rpn_target(gt_boxes, anchors, config):
 
     """
@@ -287,3 +275,21 @@ def batch_pack_graph(x, counts, num_rows):
     for i in range(num_rows):
         outputs.append(x[i, :counts[i]])
     return tf.concat(outputs, axis=0)
+
+
+def print_tensors(tensor, tensor_name):
+
+    def np_print(ary):
+        ary = ary + np.zeros_like(ary)
+        print(tensor_name + ':', ary)
+
+        print('shape is: ',ary.shape)
+        print(10*"%%%%%")
+        return ary
+    result = tf.py_func(np_print,
+                        [tensor],
+                        [tensor.dtype])
+    result = tf.reshape(result, tf.shape(tensor))
+    result = tf.cast(result, tf.float32)
+    sum_ = tf.reduce_sum(result)
+    tf.summary.scalar('print_s/{}'.format(tensor_name), sum_)

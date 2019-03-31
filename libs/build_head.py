@@ -4,18 +4,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.contrib.slim as slim
-from libs.box_utils import encode_and_decode
-from libs.box_utils import boxes_utils
+import numpy as np
+import tensorflow as tf
 from libs import losses
-from help_utils.help_utils import print_tensors
-from libs.box_utils.show_box_in_tensor import *
+from libs.box_utils import encode_and_decode, boxes_utils
+from libs.box_utils.show_box_in_tensor import draw_boxes_with_categories
+
+layers = tf.keras.layers
 
 
-DEBUG = True
-
-
-class FastRCNN(object):
+class FPNHead(object):
     def __init__(self,
                  feature_pyramid,
                  rpn_proposals_boxes,
@@ -64,9 +62,9 @@ class FastRCNN(object):
             return outputs[0]
         return outputs
 
-    @property
-    def build_frcnn_target(self):
-        '''
+    def build_head_train_sample(self):
+
+        """
         when training, we should know each reference box's label and gtbox,
         in second stage
         iou >= 0.5 is object
@@ -77,12 +75,13 @@ class FastRCNN(object):
         minibatch_encode_gtboxes:(batch_szie, config.FAST_RCNN_MINIBATCH_SIZE, 4)[dy, dx, log(dh), log(dw)]
         object_mask:(batch_szie, config.FAST_RCNN_MINIBATCH_SIZE) 1 indicate is object, 0 indicate is not objects
         label_one_hot: (batch_szie, config.FAST_RCNN_MINIBATCH_SIZE, num_class)
-        '''
-        def batch_slice_build_target(gtboxes_and_label, rpn_proposals_boxes, config):
+        """
 
-            with tf.variable_scope('build_faster_rcnn_targets'):
+        with tf.name_scope('build_head_train_sample'):
 
-                with tf.variable_scope('fast_rcnn_find_positive_negative_samples'):
+            def batch_slice_build_sample(gtboxes_and_label, rpn_proposals_boxes, config):
+
+                with tf.name_scope('select_pos_neg_samples'):
                     gtboxes = tf.cast(
                         tf.reshape(gtboxes_and_label[:, :-1], [-1, 4]), tf.float32)
                     gt_class_ids = tf.cast(
@@ -105,7 +104,7 @@ class FastRCNN(object):
                     # when box is background, not caculate gradient, so give a weight 0 to avoid caculate gradient
                     gt_class_ids = gt_class_ids * positives
 
-                with tf.variable_scope('fast_rcnn_minibatch'):
+                with tf.name_scope('head_train_minibatch'):
                     # choose the positive indices
                     positive_indices = tf.reshape(tf.where(tf.equal(object_mask, 1.)), [-1])
                     num_of_positives = tf.minimum(tf.shape(positive_indices)[0],
@@ -146,11 +145,11 @@ class FastRCNN(object):
 
                 return minibatch_reference_proboxes, minibatch_encode_gtboxes, object_mask, gt_class_ids
 
-        minibatch_reference_proboxes, minibatch_encode_gtboxes, object_mask, gt_class_ids = \
-                boxes_utils.batch_slice([self.gtboxes_and_label, self.rpn_proposals_boxes],
-                                        lambda x, y: batch_slice_build_target(x, y, self.config),
-                                        self.config.PER_GPU_IMAGE)
-        if DEBUG:
+            minibatch_reference_proboxes, minibatch_encode_gtboxes, object_mask, gt_class_ids = \
+                    boxes_utils.batch_slice([self.gtboxes_and_label, self.rpn_proposals_boxes],
+                                            lambda x, y: batch_slice_build_sample(x, y, self.config),
+                                            self.config.PER_GPU_IMAGE)
+        if self.config.DEBUG:
             gt_vision = draw_boxes_with_categories(self.origin_image[0],
                                                    self.gtboxes_and_label[0, :, :4],
                                                    self.gtboxes_and_label[0, :, 4])
@@ -164,6 +163,7 @@ class FastRCNN(object):
         return minibatch_reference_proboxes, minibatch_encode_gtboxes, object_mask, gt_class_ids
 
     def assign_level(self, minibatch_reference_proboxes):
+
         """
         compute the level of rpn_proposals_boxes
         :param: minibatch_reference_proboxes (batch_size, num_proposals, 4)[y1, x1, y2, x2]
@@ -183,17 +183,18 @@ class FastRCNN(object):
 
             return tf.cast(levels, tf.int32)
 
-    def get_rois(self, proposal_bbox):
-        '''
+    def get_rois_feature(self, proposal_bbox):
+
+        """
         1)get roi from feature map
         2)roi align or roi pooling. Here is roi align
         :param: proposal_bbox: (batch_size, num_proposal, 4)[y1, x1, y2, x2]
         :return:
         all_level_rois: [batch_size, num_proposal, 7, 7, C]
-        '''
-        levels = self.assign_level(proposal_bbox)
+        """
 
-        with tf.variable_scope('fast_rcnn_roi'):
+        levels = self.assign_level(proposal_bbox)
+        with tf.name_scope('obtain_roi_feature'):
             pooled = []
             # this is aimed at reorder the pooling map (batch_size, num_proposal)
             box_to_level = []
@@ -237,78 +238,57 @@ class FastRCNN(object):
             reshape_pooled = self.div_batch_and_bboxes_dims([pooled])
             return reshape_pooled
 
-    def fast_rcnn_net(self, features, is_training):
+    def head_net(self, features, is_training):
         """
         base the feature to compute the finial bbox and scores
         :param features:(batch_size, num_proposal, 7, 7, channels)
+        :param is_training: whether change the mean and variance in batch_normalization
         :return:
         fast_rcnn_encode_boxes: (batch_size, num_proposal, num_classes*4)
         fast_rcnn_scores:(batch_size, num_proposal, num_classes)
         """
 
-        def batch_slice_fast_rcnn_net(features, config, is_training):
+        def batch_slice_head_net(features, config, is_training):
 
-            with tf.variable_scope('fast_rcnn_net', reuse=tf.AUTO_REUSE):
-                with slim.arg_scope([slim.fully_connected],
-                                    activation_fn=None,
-                                    weights_initializer=tf.glorot_uniform_initializer(),
-                                    weights_regularizer=slim.l2_regularizer(config.WEIGHT_DECAY)):
+            with tf.variable_scope('head_net', reuse=tf.AUTO_REUSE):
 
-                    batch_norm_params = {
-                        'is_training': is_training,
-                        'decay': 0.997,
-                        'epsilon': 1e-5,
-                        'scale': True,
-                        'trainable': True,
-                        'updates_collections': tf.GraphKeys.UPDATE_OPS,
-                    }
-                    with slim.arg_scope([slim.conv2d],
-                                        stride=1,
-                                        padding="VALID",
-                                        activation_fn=tf.nn.relu,
-                                        weights_initializer=tf.glorot_uniform_initializer(),
-                                        normalizer_fn=slim.batch_norm,
-                                        normalizer_params=batch_norm_params,
-                                        weights_regularizer=slim.l2_regularizer(config.WEIGHT_DECAY)):
-                        with slim.arg_scope([slim.batch_norm],
-                                            **batch_norm_params):
+                net = layers.Conv2D(filters=1024,
+                                    kernel_size=(self.config.ROI_SIZE, config.ROI_SIZE),
+                                    name="fc1")(features)
+                net = tf.layers.batch_normalization (net, training=is_training)
+                net = layers.Activation('relu6')(net)
+                net = layers.Conv2D(filters=1024,
+                                    kernel_size=(1, 1),
+                                    name="fc2")(inputs=net)
+                net = tf.layers.batch_normalization (net, training=is_training)
+                net = layers.Activation('relu6')(net)
 
-                            net = slim.conv2d(inputs=features,
-                                              num_outputs=1024,
-                                              kernel_size=[self.config.ROI_SIZE, config.ROI_SIZE],
-                                              scope="fc_1")
+                net = tf.squeeze(net, axis=[1, 2])
+                head_scores = layers.Dense(config.NUM_CLASS,
+                                           name='head_classifier')(net)
+                head_encode_boxes = layers.Dense(net, config.NUM_CLASS * 4,
+                                                 name='head_regressor')
+                head_encode_boxes = layers.Reshape((config.NUM_CLASS, 4))(head_encode_boxes)
 
-                            net = slim.conv2d(inputs=net,
-                                              num_outputs=1024,
-                                              kernel_size=[1, 1],
-                                              scope="fc_2")
+                return head_encode_boxes, head_scores
 
-                    net = tf.squeeze(net, axis=[1, 2])
-                    fast_rcnn_scores = slim.fully_connected(net,
-                                                            config.NUM_CLASS,
-                                                            scope='classifier')
+        head_encode_boxes, head_scores =\
+            boxes_utils.batch_slice([features],
+                                    lambda x: batch_slice_head_net(x, self.config, is_training),
+                                    self.config.PER_GPU_IMAGE)
 
-                    fast_rcnn_encode_boxes = slim.fully_connected(net, config.NUM_CLASS * 4,  scope='regressor')
+        return head_encode_boxes, head_scores
 
-                    fast_rcnn_encode_boxes = tf.reshape(fast_rcnn_encode_boxes, [-1, config.NUM_CLASS, 4])
-
-                return fast_rcnn_encode_boxes, fast_rcnn_scores
-        fast_rcnn_encode_boxes, fast_rcnn_scores = boxes_utils.batch_slice([features],
-                                                   lambda x: batch_slice_fast_rcnn_net(x, self.config, is_training),
-                                                   self.config.PER_GPU_IMAGE)
-
-        return fast_rcnn_encode_boxes, fast_rcnn_scores
-
-    def fast_rcnn_loss(self):
+    def head_loss(self):
 
         minibatch_reference_proboxes, minibatch_encode_gtboxes,\
-        object_mask, gt_class_ids = self.build_frcnn_target
+        object_mask, gt_class_ids = self.build_head_train_sample
 
-        pooled_feature = self.get_rois(minibatch_reference_proboxes)
+        pooled_feature = self.get_rois_feature(minibatch_reference_proboxes)
 
-        fast_rcnn_predict_boxes, fast_rcnn_predict_scores = self.fast_rcnn_net(pooled_feature, self.IS_TRAINING)
+        fast_rcnn_predict_boxes, fast_rcnn_predict_scores = self.head_net(pooled_feature, self.IS_TRAINING)
 
-        with tf.variable_scope("fast_rcnn_loss"):
+        with tf.variable_scope("head_loss"):
             # trim zero graph
             # minibatch_encode_gtboxes, non_zeros = boxes_utils.trim_zeros_graph(minibatch_encode_gtboxes,
             #                                                                    name="trim_gtbox_finial_loss")
@@ -331,28 +311,28 @@ class FastRCNN(object):
                                                               self.config.PER_GPU_IMAGE)
 
             # loss
-            with tf.variable_scope('fast_rcnn_classification_loss'):
+            with tf.variable_scope('head_class_loss'):
                 fast_rcnn_classification_loss = tf.losses.sparse_softmax_cross_entropy(labels=gt_class_ids,
                                                                                        logits=fast_rcnn_predict_scores)
 
                 fast_rcnn_classification_loss = tf.cond(tf.is_nan(fast_rcnn_classification_loss), lambda: 0.0,
                                                         lambda: fast_rcnn_classification_loss)
 
-            with tf.variable_scope('fast_rcnn_location_loss'):
+            with tf.variable_scope('head_location_loss'):
                 fast_rcnn_location_loss = losses.l1_smooth_losses(predict_boxes=fast_rcnn_predict_boxes,
                                                                   gtboxes=minibatch_encode_gtboxes,
                                                                   object_weights=object_mask)
 
             return fast_rcnn_location_loss, fast_rcnn_classification_loss
 
-    def fast_rcnn_proposals(self, rpn_proposal_bbox, encode_boxes, categories, scores, image_window):
+    def head_proposals(self, rpn_proposal_bbox, encode_boxes, categories, scores, image_window):
         """
         padding zeros to keep alignments
         :return:
         detection_boxes_scores_labels:(batch_size, config.MAX_DETECTION_INSTANCE, 6)
         """
 
-        def batch_slice_rcnn_proposals(rpn_proposal_bbox,
+        def batch_slice_head_proposals(rpn_proposal_bbox,
                                        encode_boxes,
                                        categories,
                                        scores,
@@ -368,7 +348,7 @@ class FastRCNN(object):
             :return:
             detection_boxes_scores_labels : (-1, 6)[y1, x1, y2, x2, scores, labels]
             """
-            with tf.variable_scope('fast_rcnn_proposals'):
+            with tf.name_scope('head_proposals'):
                 # trim the zero graph
                 rpn_proposal_bbox, non_zeros = boxes_utils.trim_zeros_graph(rpn_proposal_bbox,
                                                                             name="trim_proposals_detection")
@@ -383,14 +363,14 @@ class FastRCNN(object):
 
                 # remove the background
                 keep = tf.cast(tf.where(categories > 0)[:, 0], tf.int32)
-                if DEBUG:
+                if self.config.DEBUG:
                     print_categories = tf.gather(categories, keep)
                     print_scores = tf.gather(scores, keep)
                     num_item = tf.minimum(tf.shape(print_scores)[0], 50)
                     print_scores_vision, print_index = tf.nn.top_k(print_scores, k=num_item)
                     print_categories_vision = tf.gather(print_categories, print_index)
-                    print_tensors(print_categories_vision, "categories")
-                    print_tensors(print_scores_vision, "scores")
+                    boxes_utils.print_tensors(print_categories_vision, "categories")
+                    boxes_utils.print_tensors(print_scores_vision, "scores")
                 # Filter out low confidence boxes
                 if config.FINAL_SCORE_THRESHOLD:
                     conf_keep = tf.cast(tf.where(scores >= config.FINAL_SCORE_THRESHOLD)[:, 0], tf.int32)
@@ -454,12 +434,12 @@ class FastRCNN(object):
                 return detections
 
         detections = boxes_utils.batch_slice([rpn_proposal_bbox, encode_boxes, categories, scores, image_window],
-                                             lambda x, y, z, u, v: batch_slice_rcnn_proposals(x, y, z, u, v,
-                                                                                             self.config),
+                                             lambda x, y, z, u, v: batch_slice_head_proposals(x, y, z, u, v,
+                                                                                              self.config),
                                              self.config.PER_GPU_IMAGE)
         return detections
 
-    def fast_rcnn_detection(self):
+    def head_detection(self):
         """
         compute the predict bboxes, categories, categories
         :return:
@@ -470,32 +450,30 @@ class FastRCNN(object):
 
 
         # (batch_size, num_proposal, 7, 7, channels)
-        pooled_feature = self.get_rois(self.rpn_proposals_boxes)
-        fast_rcnn_predict_boxes, fast_rcnn_predict_scores = self.fast_rcnn_net(pooled_feature, False)
+        pooled_feature = self.get_rois_feature(self.rpn_proposals_boxes)
+        head_predict_boxes, head_predict_scores = self.head_net(pooled_feature, False)
 
-        with tf.variable_scope("fast_rcnn_detection"):
+        with tf.name_scope("head_detection"):
 
-            fast_rcnn_softmax_scores = slim.softmax(fast_rcnn_predict_scores)  # [-1, num_classes]
-
+            head_softmax_scores = layers.Softmax()(head_predict_scores)  # [N, -1, num_classes]
             # gain the highest category and score and bounding box
-            fast_rcnn_categories = tf.argmax(fast_rcnn_softmax_scores, axis=2, output_type=tf.int32) # (N,)
-            row_index = tf.range(0, tf.shape(fast_rcnn_categories)[1])
+            head_categories = tf.argmax(head_softmax_scores, axis=2, output_type=tf.int32) # (N, -1)
+            row_index = tf.range(0, tf.shape(head_categories)[1])
             row_index = tf.expand_dims(row_index, 0)
             multi_row_index = tf.tile(row_index, [self.config.PER_GPU_IMAGE, 1])
             multi_row_index = tf.expand_dims(multi_row_index, axis=-1)
-            expand_fast_rcnn_categories = tf.expand_dims(fast_rcnn_categories, axis=-1)
-            index = tf.concat([multi_row_index, expand_fast_rcnn_categories], axis=-1)
-            fast_rcnn_categories_bboxs = boxes_utils.batch_slice([fast_rcnn_predict_boxes, index],
+            expand_head_categories = tf.expand_dims(head_categories, axis=-1)
+            index = tf.concat([multi_row_index, expand_head_categories], axis=-1)
+            head_categories_bboxs = boxes_utils.batch_slice([head_predict_boxes, index],
                                                                  lambda x, y: tf.gather_nd(x, y),
                                                                  self.config.PER_GPU_IMAGE)
+            head_categories_scores = tf.reduce_max(head_softmax_scores, axis=2, keepdims=False)# (N, -1)
 
-            fast_rcnn_categories_scores = tf.reduce_max(fast_rcnn_softmax_scores, axis=2, keepdims=False)# (N,)
-
-            detections = self.fast_rcnn_proposals(self.rpn_proposals_boxes,
-                                                  fast_rcnn_categories_bboxs,
-                                                  fast_rcnn_categories,
-                                                  fast_rcnn_categories_scores,
-                                                  self.window)
+            detections = self.head_proposals(self.rpn_proposals_boxes,
+                                             head_categories_bboxs,
+                                             head_categories,
+                                             head_categories_scores,
+                                             self.window)
 
             return detections
 

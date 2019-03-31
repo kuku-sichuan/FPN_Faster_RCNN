@@ -8,7 +8,6 @@ import tensorflow as tf
 import numpy as np
 import colorsys
 import cv2
-from libs.label_dict import LABEl_NAME_MAP
 
 
 def class_colors(class_ids, num_classes, bright=True):
@@ -131,7 +130,7 @@ def draw_boxes_with_scores(img_batch, boxes, scores):
     return img_tensor_with_boxes
 
 
-def draw_boxes_with_categories(img_batch, boxes, labels):
+def draw_boxes_with_categories(img_batch, boxes, labels, label_to_name):
 
     def draw_box_cv(img, boxes, labels):
         boxes = boxes.astype(np.int64)
@@ -154,7 +153,7 @@ def draw_boxes_with_categories(img_batch, boxes, labels):
                           color=color[i],
                           thickness=-1)
 
-            category = LABEl_NAME_MAP[labels[i]]
+            category = label_to_name[labels[i]]
             cv2.putText(img,
                         text=category,
                         org=(xmin, ymin + 10),
@@ -180,7 +179,7 @@ def draw_boxes_with_categories(img_batch, boxes, labels):
     return img_tensor_with_boxes
 
 
-def draw_boxes_with_categories_and_scores(img_batch, boxes, labels, scores):
+def draw_boxes_with_categories_and_scores(img_batch, boxes, labels, scores, label_to_name):
 
     def draw_box_cv(img, boxes, labels, scores):
         boxes = boxes.astype(np.int64)
@@ -206,7 +205,7 @@ def draw_boxes_with_categories_and_scores(img_batch, boxes, labels, scores):
                               pt2=(xmin+120, ymin+15),
                               color=color[i],
                               thickness=-1)
-                category = LABEl_NAME_MAP[label]
+                category = label_to_name[label]
                 cv2.putText(img,
                             text=category+": "+str(score),
                             org=(xmin, ymin+10),

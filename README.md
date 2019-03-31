@@ -1,5 +1,13 @@
 ## Feature Pyramid Network
-This tensorflow implementation code is based on [Feature Pyramid Networks for Object Detection](https://arxiv.org/abs/1612.03144). **Some code copy from https://github.com/matterport/Mask_RCNN,  some learn from https://github.com/yangxue0827/FPN_Tensorflow**.  
+This tensorflow implementation code is based on [Feature Pyramid Networks for Object Detection](https://arxiv.org/abs/1612.03144). **Some code learn from https://github.com/matterport/Mask_RCNN.
+
+### Update
+1. Streamlining structure and removing redundant parts
+2. Making the code more clear
+3. Replacing some API by new one
+4. Adding the compute time graph by set the `COMPUTE_TIME` with True
+
+![compute_time](images/compute_time.png)
 
 <font color=skyblue size=10>FEATURES:</font>
 

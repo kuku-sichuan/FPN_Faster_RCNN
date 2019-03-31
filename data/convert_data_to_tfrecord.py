@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import division, print_function, absolute_import
 import sys
-sys.path.append('../')
+import os
+import math
 import json
 import numpy as np
 import tensorflow as tf
 import skimage.io
-from help_utils.tools import *
-from libs.label_dict import *
-
+from config import TCTConfig
+sys.path.append('../')
 tf.app.flags.DEFINE_string('DATA_dir', None, 'the root of data dir')
 tf.app.flags.DEFINE_string('annotation_dir', 'annotations', 'relative path of annotations')
 tf.app.flags.DEFINE_string('image_dir', 'images', 'relative path of　image')
@@ -17,8 +17,21 @@ tf.app.flags.DEFINE_string('save_dir',  '/home/data/tfrecords/',
 tf.app.flags.DEFINE_string('dataset_name', 'tct', 'the name of dataset')
 tf.app.flags.DEFINE_string('dataset_class', 'train', 'train, val, test')
 
-
 FLAGS = tf.app.flags.FLAGS
+
+
+def view_bar(message, num, total):
+    rate = num / total
+    rate_num = int(rate * 40)
+    rate_nums = math.ceil(rate * 100)
+    r = '\r%s:[%s%s]%d%%\t%d/%d' % (message, ">" * rate_num, " " * (40 - rate_num), rate_nums, num, total,)
+    sys.stdout.write(r)
+    sys.stdout.flush()
+
+
+def mkdir(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 
 def _int64_feature(value):
@@ -37,6 +50,7 @@ def read_json_gtbox_and_label(image_item, data):
     :return: a list contains gt boxes and labels, shape is [num_of_gtboxes, 5],
            and has [xmin, ymin, xmax, ymax, label] in a per row
     """
+    config = TCTConfig()
     img_width = image_item["width"]
     img_height = image_item["height"]
     image_id = image_item["id"]
@@ -52,7 +66,7 @@ def read_json_gtbox_and_label(image_item, data):
             ## change the object category id
             for category_item in category:
                 if category_item["id"] == bbox_item["category_id"]:
-                    label = NAME_LABEL_MAP[category_item["name"]]
+                    label = config.NAME_TO_LABEL[category_item["name"]]
                     temp_box.append(label)
             assert len(temp_box) == 5
             box_list.append(temp_box)
@@ -104,6 +118,7 @@ def convert_json_to_tfrecord():
             view_bar('Conversion progress', count + 1, total_len)
 
     print('\nConversion is complete!')
+
 
 if __name__ == '__main__':
     # xml_path = '../data/dataset/VOCdevkit/VOC2007/Annotations/000005.xml'

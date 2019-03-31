@@ -4,30 +4,18 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import division
 
-import numpy as np
 import tensorflow as tf
 
 
-def subtract_means(image, window, pixels_means):
-    """
-    :param image:(batch_size, target_side, target_side, 3)
-    :param window: (y1, x1, y2, x2)
-    :param pixels_means: (3)
-    :return:
-    """
-    y1, x1, y2, x2 = np.split(window, 4)
-    for i in range(np.shape(image)[0]):
-        y1, x1, y2, x2 = np.split(window[i], 4)
-        image[i] = image[i, y1:y2, x1:x2, :] - pixels_means
-    return image
-
-
-def image_resize_pad(img_tensor, gtboxes_and_label, target_side):
+def image_resize_pad_sub_mean(img_tensor,
+                              gtboxes_and_label,
+                              target_side,
+                              pixel_means):
     """
     :param img_tensor:tensor, shape [h, w, c]
     :param gtboxes_and_label:tensor, [-1, 5]
     :param target_side : the target image shape
-    :param pixel_means:
+    :param pixel_means: the means of pixels of three channels
     :return:
     """
     h, w = tf.shape(img_tensor)[0], tf.shape(img_tensor)[1]
@@ -51,6 +39,7 @@ def image_resize_pad(img_tensor, gtboxes_and_label, target_side):
 
     # padding the image
     img_tensor = tf.squeeze(img_tensor, axis=0)
+    img_tensor = img_tensor - tf.convert_to_tensor(pixel_means)
     pad_list = [compute_padding(target_side, new_h), compute_padding(target_side, new_w), [0, 0]]
     img_tensor = tf.pad(img_tensor, pad_list)
 
@@ -65,25 +54,6 @@ def image_resize_pad(img_tensor, gtboxes_and_label, target_side):
 
      # ensure imgtensor rank is 3
     return img_tensor, final_valid_bbox, image_windows
-
-
-def image_resize_pad_inference_data(img_tensor, target_side):
-
-    h, w, = tf.shape(img_tensor)[0], tf.shape(img_tensor)[1]
-
-    img_tensor = tf.expand_dims(img_tensor, axis=0)
-
-    new_h, new_w = tf.cond(tf.less(h, w),
-                           true_fn=lambda: (target_side, target_side * w // h),
-                           false_fn=lambda: (target_side * h // w, target_side))
-    img_tensor = tf.image.resize_bilinear(img_tensor, [new_h, new_w])
-    img_tensor = tf.squeeze(img_tensor, axis=0)
-
-    pad_list = [compute_padding(target_side, new_h), compute_padding(target_side, new_w)]
-    pad_tensor = tf.convert_to_tensor(pad_list)
-    img_tensor = tf.pad(img_tensor, pad_tensor)
-
-    return img_tensor  # [1, h, w, c]
 
 
 def flip_left_right(img_tensor, gtboxes_and_label):

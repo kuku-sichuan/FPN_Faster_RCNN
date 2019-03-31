@@ -80,8 +80,8 @@ def make_anchors(base_anchor_size, anchor_ratios, featuremaps_height,
         return final_anchors
 
 
-def generate_pyramid_anchors(config):
-    with tf.variable_scope('make_anchors'):
+def generate_pyramid_anchors(config, name="pyramid_anchors"):
+    with tf.variable_scope(name):
         anchor_list = []
         anchor_ratios = tf.constant(config.ANCHOR_RATIOS, tf.float32)
         for i in range(len(config.BACKBONE_SHAPES)):

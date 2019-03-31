@@ -5,6 +5,7 @@ from __future__ import print_function
 from __future__ import division
 
 import sys
+sys.path.append('../')
 import os
 import tensorflow as tf
 import numpy as np
@@ -13,12 +14,12 @@ from libs.networks.network_factory import get_network_byname
 from libs import build_rpn, build_head, build_fpn
 from libs.box_utils.show_box_in_tensor import draw_boxes_with_scores, draw_boxes_with_categories_and_scores
 from libs.box_utils.boxes_utils import batch_slice
-from data.read_tfrecord import train_input_fn, eval_predict_input_fn
+from data.read_tfrecord import train_input_fn
 from config import TCTConfig
-from run_meta import MetadataHook
-from eval_utils import compute_metric_ap
+from tools.run_meta import MetadataHook
+from tools.eval_utils import compute_metric_ap
+from libs.box_utils.boxes_utils import print_tensors
 
-sys.path.append('../')
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
@@ -36,8 +37,8 @@ def model_fn(features,
     else:
         IS_TRAINING = False
 
-    image_batch = features["image"]
-    origin_image_batch = image_batch + tf.convert_to_tensor(net_config.PIXEL_MEANS)
+    origin_image_batch = features["image"]
+    image_batch = origin_image_batch - tf.convert_to_tensor(net_config.PIXEL_MEANS, dtype=tf.float32)
     image_window = features["image_window"]
     # there is is_training means that bn is training, so it is important!
     _, share_net = get_network_byname(inputs=image_batch,
@@ -78,6 +79,8 @@ def model_fn(features,
 
     detections = fpn_fast_rcnn_head.head_detection()
     if net_config.DEBUG:
+        print_tensors(rpn_proposals_scores[0,:50],"scores")
+        print_tensors(rpn_proposals_boxes[0, :50, :], "bbox")
         rpn_proposals_vision = draw_boxes_with_scores(origin_image_batch[0, :, :, :],
                                                       rpn_proposals_boxes[0, :50, :],
                                                       rpn_proposals_scores[0, :50])
@@ -94,13 +97,19 @@ def model_fn(features,
 
     # train
     with tf.name_scope("regularization_losses"):
-        regularization_list = [tf.reduce_sum(net_config.WEIGHT_DECAY * tf.square(w.read_value()))
-                               for w in tf.trainable_variables()]
+        regularization_list = [tf.nn.l2_loss(w.read_value()) *
+                               net_config.WEIGHT_DECAY / tf.cast(tf.size(w.read_value()),
+                               tf.float32) for w in tf.trainable_variables() if 'gamma' not
+                               in w.name and 'beta' not in w.name]
         regularization_loss = tf.add_n(regularization_list)
 
     total_loss = regularization_loss + head_total_loss + rpn_total_loss
-    global_step = slim.get_or_create_global_step()
-    tf.train.init_from_checkpoint(net_config.CHECKPOINT_DIR, {net_config.NET_NAME + "/": net_config.NET_NAME + "/"})
+    total_loss = tf.cond(tf.is_nan(total_loss),lambda:0.0,lambda:total_loss)
+    print_tensors(head_total_loss,"head_loss")
+    print_tensors(rpn_total_loss,"rpn_loss")
+    global_step = tf.train.get_or_create_global_step()
+    tf.train.init_from_checkpoint(net_config.CHECKPOINT_DIR,
+                                  {net_config.BACKBONE_NET + "/": net_config.BACKBONE_NET + "/"})
     with tf.name_scope("optimizer"):
         lr = tf.train.piecewise_constant(global_step,
                                          boundaries=[np.int64(net_config.BOUNDARY[0]),
@@ -108,11 +117,12 @@ def model_fn(features,
                                          values=[net_config.LEARNING_RATE, net_config.LEARNING_RATE / 10,
                                                  net_config.LEARNING_RATE / 100])
         optimizer = tf.train.MomentumOptimizer(lr, momentum=net_config.MOMENTUM)
+        optimizer = tf.contrib.estimator.TowerOptimizer(optimizer)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies([tf.group(*update_ops)]):
             grads = optimizer.compute_gradients(total_loss)
             # clip gradients
-            grads = tf.contrib.training.clip_gradient_norms(grads,net_config.CLIP_GRADIENT_NORM)
+            grads = tf.contrib.training.clip_gradient_norms(grads, net_config.CLIP_GRADIENT_NORM)
             train_op = optimizer.apply_gradients(grads, global_step)
 
     # ***********************************************************************************************
@@ -135,11 +145,13 @@ def model_fn(features,
     summary_hook = tf.train.SummarySaverHook(save_steps=net_config.SAVE_EVERY_N_STEP,
                                              output_dir=net_config.MODLE_DIR,
                                              summary_op=tf.summary.merge_all())
-
+    hooks = [summary_hook]
+    if net_config.COMPUTE_TIME:
+        hooks.append(meta_hook)
     if mode == tf.estimator.ModeKeys.TRAIN:
         return tf.estimator.EstimatorSpec(mode, loss=total_loss,
                                           train_op=train_op,
-                                          training_hooks=[summary_hook, meta_hook])
+                                          training_hooks=hooks)
 
     # ***********************************************************************************************
     # *                                            EVAL                                             *
@@ -158,7 +170,7 @@ def model_fn(features,
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     net_config = TCTConfig()
     session_config = tf.ConfigProto()
     session_config.gpu_options.allow_growth = True
@@ -166,15 +178,11 @@ if __name__ == "__main__":
     estimator_config = tf.estimator.RunConfig(model_dir=os.path.join(net_config.MODLE_DIR, net_config.NET_NAME),
                                               log_step_count_steps=200,
                                               save_summary_steps=net_config.SAVE_EVERY_N_STEP,
-                                              save_checkpoints_steps=net_config.SAVE_EVERY_N_STEP,
+                                             save_checkpoints_steps=net_config.SAVE_EVERY_N_STEP,
                                               session_config=session_config)
-
-    fpn_estimator = tf.estimator.Estimator(model_fn,
-                                           params={"net_config": net_config},
-                                           config=estimator_config)
-    train_spec = tf.estimator.TrainSpec(input_fn=lambda: train_input_fn(net_config))
-    eval_spec = tf.estimator.EvalSpec(input_fn=lambda: eval_predict_input_fn(net_config),
-                                      start_delay_secs=100,
-                                      throttle_secs=120)
-    tf.estimator.train_and_evaluate(fpn_estimator, train_spec, eval_spec)
+    my_estimator = tf.estimator.Estimator(tf.contrib.estimator.replicate_model_fn(model_fn,
+                                          devices=net_config.GPU_GROUPS),
+                                          params={"net_config": net_config}, 
+                                          config=estimator_config)
+    my_estimator.train(input_fn=lambda: train_input_fn(net_config))
 

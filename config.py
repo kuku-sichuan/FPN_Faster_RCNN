@@ -35,7 +35,8 @@ class Config(object):
     ###################################
     GPU_GROUPS = ["/gpu:0", "/gpu:1"]
     NUM_GPUS = len(GPU_GROUPS)
-    CLIP_GRADIENT_NORM = 6.0
+    COMPUTE_TIME = False
+    CLIP_GRADIENT_NORM = 5.0
     EPOCH_BOUNDARY = [25]
     EPOCH = 30
     WEIGHT_DECAY = 0.0001
@@ -126,7 +127,7 @@ class TCTConfig(Config):
                                 'flora': 9,
                                 'herps': 10,
                                 'actinomyces': 11})
-    LABEL_TO_NAME = OrderedDict({v:k, for k, v in NAME_TO_LABEL.items()})
+    LABEL_TO_NAME = OrderedDict({v:k for k, v in NAME_TO_LABEL.items()})
     
 
     def __init__(self):

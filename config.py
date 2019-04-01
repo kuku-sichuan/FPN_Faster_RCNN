@@ -110,7 +110,7 @@ class TCTConfig(Config):
     DEBUG =False
     MODLE_DIR = "./logs"
     BACKBONE_NET = "resnet_model"
-    NET_NAME = "softmax_label_smoothing"
+    NET_NAME = "ResNet_FPN"
     # resize and padding the image shape to (1024, 1024)
     TARGET_SIDE = 1024
     PIXEL_MEANS = np.array([115.2, 118.8, 123.0])

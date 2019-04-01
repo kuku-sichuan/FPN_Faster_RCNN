@@ -112,10 +112,8 @@ def model_fn(features,
                                   {net_config.BACKBONE_NET + "/": net_config.BACKBONE_NET + "/"})
     with tf.name_scope("optimizer"):
         lr = tf.train.piecewise_constant(global_step,
-                                         boundaries=[np.int64(net_config.BOUNDARY[0]),
-                                                     np.int64(net_config.BOUNDARY[1])],
-                                         values=[net_config.LEARNING_RATE, net_config.LEARNING_RATE / 10,
-                                                 net_config.LEARNING_RATE / 100])
+                                         boundaries=[np.int64(net_config.BOUNDARY[0])],
+                                         values=[net_config.LEARNING_RATE, net_config.LEARNING_RATE / 10])
         optimizer = tf.train.MomentumOptimizer(lr, momentum=net_config.MOMENTUM)
         optimizer = tf.contrib.estimator.TowerOptimizer(optimizer)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)

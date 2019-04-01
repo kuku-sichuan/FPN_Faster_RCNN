@@ -7,7 +7,7 @@ class Config(object):
     ##############################
     # Data And Dataset
     ##############################
-    CHECKPOINT_DIR = "/root/commonfile/resnet_imagenet_v2_fp32_20181001"
+    CHECKPOINT_DIR = "/root/userfolder/kuku/resnet_imagenet_v2_fp32_20181001"
     NUM_CLASS = 0
     NUM_ITEM_DATASET = 0
     DATASET_NAME = None
@@ -15,7 +15,6 @@ class Config(object):
     MODLE_DIR = None
     TARGET_SIDE = None
     NAME_TO_LABEL = None
-    COMPUTE_TIME = False
     IMAGE_MAX_INSTANCES = 100
     PIXEL_MEANS = np.array([115.2, 118.8, 123.0])
 
@@ -34,16 +33,17 @@ class Config(object):
     ###################################
     # Training Config
     ###################################
-    GPU_GROUPS = ["/gpu:0"]
+    GPU_GROUPS = ["/gpu:0", "/gpu:1"]
+    NUM_GPUS = len(GPU_GROUPS)
     CLIP_GRADIENT_NORM = 6.0
-    EPOCH_BOUNDARY = [20, 35]
-    EPOCH = 40
+    EPOCH_BOUNDARY = [25]
+    EPOCH = 30
     WEIGHT_DECAY = 0.0001
     EPSILON = 1e-5
     MOMENTUM = 0.9
     LEARNING_RATE = 0.001
     PER_GPU_IMAGE = 2
-    NUM_GPUS = 1
+    
 
     ###################################
     # RPN
@@ -100,7 +100,7 @@ class TCTConfig(Config):
     NUM_CLASS = 11 + 1
     NUM_ITEM_DATASET = 5714
     # The exact location of data be located by fllowing four variables
-    DATA_DIR = "/root/commonfile/tfdata"
+    DATA_DIR = "/root/userfolder/kuku/tfdata"
     DATASET_NAME = 'tct'
     TRAIN_DATASET_NAME = "train.tfrecord"
     EVAL_DATASET_NAME = "test.tfrecord"
@@ -109,7 +109,7 @@ class TCTConfig(Config):
     DEBUG =False
     MODLE_DIR = "./logs"
     BACKBONE_NET = "resnet_model"
-    NET_NAME = "ResNet_FPN"
+    NET_NAME = "softmax_label_smoothing"
     # resize and padding the image shape to (1024, 1024)
     TARGET_SIDE = 1024
     PIXEL_MEANS = np.array([115.2, 118.8, 123.0])
@@ -126,6 +126,8 @@ class TCTConfig(Config):
                                 'flora': 9,
                                 'herps': 10,
                                 'actinomyces': 11})
+    LABEL_TO_NAME = OrderedDict({v:k, for k, v in NAME_TO_LABEL.items()})
+    
 
     def __init__(self):
         Config.__init__(self)
